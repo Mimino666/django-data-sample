@@ -67,9 +67,13 @@ Do you want to continue?
             confirm = 'yes'
 
         if confirm == 'yes':
-            importer = Importer(source_db, dest_db, batch_size, self.stdout)
-            model_2_pks = self._collect_pks(source_db, model_list, limit, is_random)
-            importer.import_objects(model_2_pks)
+            querysets = []
+            for model in model_list:
+                qs = model._default_manager.all()
+                if is_random:
+                    qs = qs.order_by('?')
+                querysets.append(qs[:limit])
+            Importer(source_db, dest_db, batch_size, self.stdout).import_objects(querysets)
         else:
             self.stdout.write('Data import cancelled.')
 
@@ -132,14 +136,3 @@ Do you want to continue?
                             model_list.append(model)
 
         return model_list
-
-    def _collect_pks(self, db, model_list, limit, is_random):
-        model_2_pks = {}
-        for model in model_list:
-            qs = model._default_manager \
-                .using(db) \
-                .values_list('pk', flat=True)
-            if is_random:
-                qs = qs.order_by('?')
-            model_2_pks[model] = qs[:limit]
-        return model_2_pks

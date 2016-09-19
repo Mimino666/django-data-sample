@@ -21,10 +21,11 @@ class Importer(object):
         self.batch_size = batch_size
         self.stdout = stdout
 
-    def import_objects(self, model_2_pks):
+    def import_objects(self, querysets):
         self.model_2_pks = defaultdict(set)
-        for model, pks in six.iteritems(model_2_pks):
-            self.model_2_pks[model] = set(pks)
+        for qs in querysets:
+            pks = qs.using(self.source_db).values_list('pk', flat=True)
+            self.model_2_pks[qs.model] |= set(pks)
 
         # topologically sort the models based on their relations
         self.topsorted_models = []
@@ -51,7 +52,7 @@ class Importer(object):
     def _create_objects(self, model):
         pks = list(self.model_2_pks[model])
         total = len(pks)
-        self.stdout.write('Importing %s new objects of %s' % (total, model._meta.label))
+        self.stdout.write('Importing %s new objects of %s\n' % (total, model._meta.label))
         for start in xrange(0, total, self.batch_size):
             end = min(total, start + self.batch_size)
             objs = model._default_manager \
