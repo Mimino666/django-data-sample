@@ -1,8 +1,11 @@
 from collections import defaultdict
-import sys
+import logging
 
 from django.db import transaction
 from django.utils import six
+
+
+logger = logging.getLogger(__name__)
 
 
 class Importer(object):
@@ -15,11 +18,10 @@ class Importer(object):
         A -> B -> C -> A
     '''
 
-    def __init__(self, source_db, dest_db, batch_size=100, stdout=sys.stdout):
+    def __init__(self, source_db, dest_db, batch_size=100):
         self.source_db = source_db
         self.dest_db = dest_db
         self.batch_size = batch_size
-        self.stdout = stdout
 
     def import_objects(self, querysets):
         self.model_2_pks = defaultdict(set)
@@ -44,6 +46,11 @@ class Importer(object):
                 .values_list('pk', flat=True))
             pks -= existing_pks
 
+        # output info
+        for model in self.topsorted_models:
+            logger.debug('Importing %s new objects of %s',
+                         len(self.model_2_pks[model]), model._meta.label)
+
         # create objects
         with transaction.atomic(using=self.dest_db):
             for model in self.topsorted_models:
@@ -52,7 +59,7 @@ class Importer(object):
     def _create_objects(self, model):
         pks = list(self.model_2_pks[model])
         total = len(pks)
-        self.stdout.write('Importing %s new objects of %s\n' % (total, model._meta.label))
+        logger.debug('Importing %s...', model._meta.label)
         for start in xrange(0, total, self.batch_size):
             end = min(total, start + self.batch_size)
             objs = model._default_manager \

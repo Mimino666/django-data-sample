@@ -73,7 +73,7 @@ Do you want to continue?
                 if is_random:
                     qs = qs.order_by('?')
                 querysets.append(qs[:limit])
-            Importer(source_db, dest_db, batch_size, self.stdout).import_objects(querysets)
+            Importer(source_db, dest_db, batch_size).import_objects(querysets)
         else:
             self.stdout.write('Data import cancelled.')
 
