@@ -1,11 +1,13 @@
 from django.apps import apps
 from django.core.management.base import BaseCommand, CommandError
-from django.db import connections, router
+from django.db import connections
 from django.utils.six.moves import input
+
+from ...importer import Importer
 
 
 class Command(BaseCommand):
-    help = ''
+    help = 'Import a sample of DB objects from source DB to dest DB. Follow foreign key relations.'
 
     def add_arguments(self, parser):
         parser.add_argument('source_db', type=str,
@@ -19,7 +21,7 @@ class Command(BaseCommand):
             help='An app_label or app_label.ModelName to exclude '
                  '(use multiple --exclude to exclude multiple apps/models).')
         parser.add_argument('--limit', default=1000, dest='limit', type=int,
-            help='Number of objects to import from each model.')
+            help='Number of objects to import from each model. If 0, then import ALL objects.')
         parser.add_argument('--batch-size', default=100, dest='batch_size', type=int,
             help='Number of objects to create at once.')
         parser.add_argument('--noinput', '--no-input',
@@ -30,6 +32,8 @@ class Command(BaseCommand):
         source_db = options.get('source_db')
         dest_db = options.get('dest_db')
         excludes = options.get('exclude')
+        limit = options.get('limit') or None
+        batch_size = options.get('batch_size')
         interactive = options.get('interactive')
 
         if source_db not in connections:
@@ -53,18 +57,20 @@ Data will be imported for the following models:
 Do you want to continue?
 
     Type 'yes' to continue, or 'no' to cancel: ''' % (
-                source_db, self._format_db(source_db),
-                dest_db, self._format_db(dest_db),
+                source_db, self._format_connection(source_db),
+                dest_db, self._format_connection(dest_db),
                 '\n'.join('\t %s' % model._meta.label for model in model_list)))
         else:
             confirm = 'yes'
 
         if confirm == 'yes':
-            pass
+            importer = Importer(source_db, dest_db, batch_size, self.stdout)
+            model_2_pks = self._collect_pks(source_db, model_list, limit)
+            importer.import_objects(model_2_pks)
         else:
             self.stdout.write('Data import cancelled.')
 
-    def _format_db(self, db_name):
+    def _format_connection(self, db_name):
         return '%(NAME)s - %(USER)s@%(HOST)s:%(PORT)s' % connections[db_name].settings_dict
 
     def _collect_models(self, app_labels, excludes):
@@ -123,3 +129,11 @@ Do you want to continue?
                             model_list.append(model)
 
         return model_list
+
+    def _collect_pks(self, db, model_list, limit):
+        model_2_pks = {}
+        for model in model_list:
+            model_2_pks[model] = model._default_manager \
+                .using(db) \
+                .values_list('pk', flat=True)[:limit]
+        return model_2_pks
