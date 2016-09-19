@@ -24,6 +24,8 @@ class Command(BaseCommand):
             help='Number of objects to import from each model. If 0, then import ALL objects.')
         parser.add_argument('--batch-size', default=100, dest='batch_size', type=int,
             help='Number of objects to create at once.')
+        parser.add_argument('--random', action='store_true', default=False,
+            help='Select random objects to fetch from DB.')
         parser.add_argument('--noinput', '--no-input',
             action='store_false', dest='interactive', default=True,
             help='Tells Django to NOT prompt the user for input of any kind.')
@@ -34,6 +36,7 @@ class Command(BaseCommand):
         excludes = options.get('exclude')
         limit = options.get('limit') or None
         batch_size = options.get('batch_size')
+        is_random = options.get('random')
         interactive = options.get('interactive')
 
         if source_db not in connections:
@@ -65,7 +68,7 @@ Do you want to continue?
 
         if confirm == 'yes':
             importer = Importer(source_db, dest_db, batch_size, self.stdout)
-            model_2_pks = self._collect_pks(source_db, model_list, limit)
+            model_2_pks = self._collect_pks(source_db, model_list, limit, is_random)
             importer.import_objects(model_2_pks)
         else:
             self.stdout.write('Data import cancelled.')
@@ -130,10 +133,13 @@ Do you want to continue?
 
         return model_list
 
-    def _collect_pks(self, db, model_list, limit):
+    def _collect_pks(self, db, model_list, limit, is_random):
         model_2_pks = {}
         for model in model_list:
-            model_2_pks[model] = model._default_manager \
+            qs = model._default_manager \
                 .using(db) \
-                .values_list('pk', flat=True)[:limit]
+                .values_list('pk', flat=True)
+            if is_random:
+                qs = qs.order_by('?')
+            model_2_pks[model] = qs[:limit]
         return model_2_pks
